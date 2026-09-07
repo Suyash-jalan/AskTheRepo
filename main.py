@@ -116,3 +116,19 @@ def get_commit_history(repo_path, max_commits=500):
         sha, author, date, message = line.split('|', 3)
         commits.append({'sha': sha, 'author': author, 'date': date, 'message': message})
     return commits
+
+    for commit in coommits:
+        embedding = embed(section['content'])
+        collection.add(
+            ids=[f"{path}:{section['heading']}"],
+            embeddings = [embedding],
+            documents = commit['content'],
+            metadatas = [{'Author':section['author'],'date':section['date'],'source_type':'commit'}]
+        )
+
+def git_blame_tool(file_path, line_number, repo_path):
+    result = subprocess.run(
+        ['git', '-C', repo_path, 'blame', '-L', f'{line_number},{line_number}', file_path],
+        capture_output=True, text=True
+    )
+    return result.stdout        
