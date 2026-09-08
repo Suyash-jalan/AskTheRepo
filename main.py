@@ -68,9 +68,8 @@ collection = client.get_or_create_collection("codebase")
 
 for chunk in all_chunks:
     embedding = embed(chunk['code'])
-
     collection.add(
-         ids = [f"{chunk['file']}:{chunk['start_line']}"],
+        ids = [f"{chunk['file']}:{chunk['start_line']}"],
         embeddings = [embedding],
         documents = chunk['code'],
         matadatas = [{
@@ -131,4 +130,4 @@ def git_blame_tool(file_path, line_number, repo_path):
         ['git', '-C', repo_path, 'blame', '-L', f'{line_number},{line_number}', file_path],
         capture_output=True, text=True
     )
-    return result.stdout        
+    return  result.stdout         
