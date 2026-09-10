@@ -130,4 +130,103 @@ def git_blame_tool(file_path, line_number, repo_path):
         ['git', '-C', repo_path, 'blame', '-L', f'{line_number},{line_number}', file_path],
         capture_output=True, text=True
     )
-    return  result.stdout         
+    return result.stdout  
+
+def vector_search_tool(query: str, collection, n_results: int = 5):
+    query_embedding = embed(query)
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=n_results
+    )
+    return results
+
+import subprocess
+
+def grep_tool(search_term: str, repo_path: str):
+    result = subprocess.run(
+        ['grep', '-rn', search_term, repo_path],
+        capture_output=True, text=True
+    )
+    return result.stdout
+
+import subprocess
+
+def git_log_tool(file_path: str, repo_path: str, max_commits: int = 10):
+    result = subprocess.run(
+        ['git', '-C', repo_path, 'log', f'-{max_commits}',
+         '--pretty=format:%h|%an|%ad|%s', '--date=short', '--', file_path],
+        capture_output=True, text=True
+    )
+    return result.stdout
+
+
+def find_definition_tool(name: str, all_chunks: list):
+    return [
+        chunk for chunk in all_chunks
+        if chunk['name'] == name
+    ]
+
+
+tool = [
+    {
+        "name": "vector_search_tool",
+        "description": "Semantic search over code, docs, and commit messages. Use for conceptual questions like 'how does X work'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "The search query"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name" : "grep_tool",
+        "description": "Exact string/symbol search across the repo. Use when the user names a specific function, variable, or exact term.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "search_term": {"type": "string"}
+            },
+            "required": ["search_term"]
+        }
+    },
+    {
+        "name" : "git_log_tool",
+        "description" : "Get commit history for a specific file. Use for 'when was this changed' or 'what's the history of this file' questions.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string"},
+                "repo_path": {"type": "string"},
+                "max_commits": {"type": "integer"}
+            },
+            "required": ["file_path", "repo_path"]
+        }
+    },
+    {
+        "name": "git_blame_tool",
+        "description": "Shows who last modified each line of a file and the commit message.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string"},
+                "line_number": {"type": "integer"},
+                "repo_path": {"type": "string"}
+            },
+            "required": ["file_path", "line_number", "repo_path"]
+        }
+    },
+    {
+        "name": "find_definition_tool",
+        "description": "Finds the definition of a function or class in the codebase.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Name of function or class"}
+            },
+            "required": ["name"]
+        }
+    }
+]      
+
+
