@@ -3,6 +3,7 @@ import git
 import os
 import chromadb
 import subprocess
+import json
 from langchain_text_splitters import MarkdownHeaderTextSplitter
  
 repo_url = "https://github.com/Suyash-jalan/skillBridge-backend"
@@ -167,66 +168,87 @@ def find_definition_tool(name: str, all_chunks: list):
     ]
 
 
-tool = [
-    {
-        "name": "vector_search_tool",
-        "description": "Semantic search over code, docs, and commit messages. Use for conceptual questions like 'how does X work'.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "The search query"}
-            },
-            "required": ["query"]
-        }
-    },
-    {
-        "name" : "grep_tool",
-        "description": "Exact string/symbol search across the repo. Use when the user names a specific function, variable, or exact term.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "search_term": {"type": "string"}
-            },
-            "required": ["search_term"]
-        }
-    },
-    {
-        "name" : "git_log_tool",
-        "description" : "Get commit history for a specific file. Use for 'when was this changed' or 'what's the history of this file' questions.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_path": {"type": "string"},
-                "repo_path": {"type": "string"},
-                "max_commits": {"type": "integer"}
-            },
-            "required": ["file_path", "repo_path"]
-        }
-    },
-    {
-        "name": "git_blame_tool",
-        "description": "Shows who last modified each line of a file and the commit message.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_path": {"type": "string"},
-                "line_number": {"type": "integer"},
-                "repo_path": {"type": "string"}
-            },
-            "required": ["file_path", "line_number", "repo_path"]
-        }
-    },
-    {
-        "name": "find_definition_tool",
-        "description": "Finds the definition of a function or class in the codebase.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Name of function or class"}
-            },
-            "required": ["name"]
-        }
-    }
-]      
+from langchain_groq import ChatGroq
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
+import subprocess
 
 
+class CodebaseAgent:
+    def __init__(self, storage_path, collection, all_chunks, groq_api_key, model="llama-3.3-70b-versatile"):
+        self.storage_path = storage_path
+        self.collection = collection
+        self.all_chunks = all_chunks
+
+        self.llm = ChatGroq(model=model, api_key=groq_api_key)
+        self.tools = self._build_tools()
+
+        system_prompt = """You are a codebase assistant. Always cite the exact 
+        file path, line numbers, or commit hash your answer is based on. 
+        Never answer without grounding your claims in the retrieved information."""
+
+        self.agent = create_react_agent(self.llm, self.tools, prompt=system_prompt)
+
+    def _build_tools(self):
+        storage_path = self.storage_path
+        collection = self.collection
+        all_chunks = self.all_chunks
+
+        @tool
+        def vector_search_tool(query: str) -> str:
+            """Semantic search over code, docs, and commit messages."""
+            query_embedding = embed(query)
+            results = collection.query(query_embeddings=[query_embedding], n_results=5)
+            return str(results)
+
+        @tool
+        def grep_tool(search_term: str) -> str:
+            """Exact string/symbol search across the repo."""
+            result = subprocess.run(
+                ['grep', '-rn', search_term, storage_path],
+                capture_output=True, text=True
+            )
+            return result.stdout
+
+        @tool
+        def git_log_tool(file_path: str) -> str:
+            """Get commit history for a specific file."""
+            result = subprocess.run(
+                ['git', '-C', storage_path, 'log', '-10',
+                 '--pretty=format:%h|%an|%ad|%s', '--date=short', '--', file_path],
+                capture_output=True, text=True
+            )
+            return result.stdout
+
+        @tool
+        def git_blame_tool(file_path: str, line_number: int) -> str:
+            """Find who last changed a specific line and when."""
+            result = subprocess.run(
+                ['git', '-C', storage_path, 'blame', '-L', f'{line_number},{line_number}', file_path],
+                capture_output=True, text=True
+            )
+            return result.stdout
+
+        @tool
+        def find_definition_tool(name: str) -> str:
+            """Find where a function or class is defined by exact name."""
+            matches = [c for c in all_chunks if c['name'] == name]
+            return str(matches)
+
+        return [vector_search_tool, grep_tool, git_log_tool, git_blame_tool, find_definition_tool]
+
+    def run(self, question: str) -> str:
+        response = self.agent.invoke({
+            "messages": [{"role": "user", "content": question}]
+        })
+        return response["messages"][-1].content
+
+agent = CodebaseAgent(
+    storage_path=storage_path,
+    collection=collection,
+    all_chunks=all_chunks,
+    groq_api_key="your_groq_api_key"
+)
+
+answer = agent.run("Who last changed the validateToken function?")
+print(answer)        
